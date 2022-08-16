@@ -1,0 +1,470 @@
+---
+title: "COVID-19 Analysis"
+author: "Qua Vallery"
+date: '2022-08-13'
+output: pdf_document
+---
+# Description of Data
+
+The COVID-19 Data Repository by the Center for Systems Science and Engineering (CSSE) at John Hopkins University includes daily COVID-19 reports for the US and globally. All data is read in from the daily case reports to generate time series summary tables including confirmed cases and deaths for the US and globally. For this analysis I will be focusing on US confirmed cases and deaths only. The two CSVs from the John Hopkins COVID-19 Data Repository used in the analysis are named time_series_covid19_confirmed_US.csv and time_series_covid19_deaths_US.csv. I developed a third CSV for this analysis named state_codes.csv. Below is a description of all columns for each dataset:
+
+## time_series_covid19_confirmed_US.csv
+
+Each record represents total confirmed COVID cases by  county, state between January 22, 2020, and August 5, 2022. 
+
+- UID: Unique Identifier for each row entry.
+- Iso2: Officially assigned two-letter country code identifiers.
+- Iso3: Officially assigned three-letter country code identifiers.
+- Code3: Officially assigned numeric country code identifiers.
+- FIPS: US only. Federal Information Processing Standards code that uniquely identifies counties within the USA.
+- Admin2: County name. US only.
+- Province_State: Province, state or dependency name.
+- Country_Region: Country, region or sovereignty name. The names of locations included on the Website correspond with the official designations used by the U.S. Department of State.
+- Lat: Latitude.
+- Long_: Longitude.
+- Combined_Key: Combination of Admin2, Province_State, Country_Region.
+
+## time_series_COVID19_deaths_US.csv
+
+- UID: Unique Identifier for each row entry.
+- Iso2: Officially assigned two-letter country code identifiers.
+- Iso3: Officially assigned three-letter country code identifiers.
+- Code3: Officially assigned numeric country code identifiers.
+- FIPS: US only. Federal Information Processing Standards code that uniquely identifies counties within the USA.
+- Admin2: County name. US only.
+- Province_State: Province, state or dependency name.
+- Country_Region: Country, region or sovereignty name. The names of locations included on the Website correspond with the official designations used by the U.S. Department of State.
+- Lat: Latitude.
+- Long_: Longitude.
+- Combined_Key: Combination of Admin2, Province_State, Country_Region.
+- Population: Population of the Admin2 (the county).
+
+## state_codes.csv
+
+- State: Name of US state.
+- State Initial: US State two-letter abbreviation.
+
+# Objectives
+
+For this analysis I answered the following questions:
+
+1. What are the total confirmed COVID-19 cases and deaths by state?
+2. What does California's COVID-19 deaths look like over time?
+3. Which states had the smallest and largest percent increase in deaths compared to 2020?
+4. What is the COVID-19 deaths impact look like across different geographic areas of the US?
+5. Is there a relationship between the number of COVID-19 cases and deaths?
+
+# Import libraries and Data
+
+I started by importing the necessary libraries and data.
+
+```{r import libraries/data, echo = TRUE, results = "hide"}
+
+# load packages
+library(lubridate)
+library(tidyverse)
+library(tidyquant)
+install.packages("usmap", repos = "http://cran.us.r-project.org")    
+library(usmap)
+
+# import files
+US_confirmed_tbl <- read_csv("time_series_covid19_confirmed_US.csv")
+US_deaths_tbl <- read_csv("time_series_covid19_deaths_US.csv")
+state_codes_tbl <- readr::read_delim("state_codes.csv", delim = "|")
+
+```
+# Examine Data
+
+I examined the data for any import issues, classification errors, and missing values. There were no import or classification errors. However, there were two columns, FIPS and Admin2, with missing values. I further examined the columns with missing values in each data set and discovered that the same observations were missing values in both the cases and deaths data sets for the same columns. Ultimately, I decided not to remove or impute the missing values because I wasn't relying on those columns for my analysis. 
+
+```{r examine import pt 1, echo = TRUE}
+
+# check for import errors
+errors_confirmed_tbl <- readr::problems(US_confirmed_tbl)
+errors_deaths_tbl <- readr::problems(US_deaths_tbl)
+errors_codes_tbl <- readr::problems(state_codes_tbl)
+
+# check for correct classification of fields
+
+US_confirmed_tbl
+US_deaths_tbl
+
+```
+
+```{r examine pt 2, echo = TRUE}
+# NA check
+findNAs_confirmed_tbl <- colSums(is.na(US_confirmed_tbl))
+
+findNAs_deaths_tbl <- colSums(is.na(US_deaths_tbl))
+
+
+```
+
+```{r examine pt 3, echo = TRUE}
+
+# Extract rows with NAs
+    
+    NAs_Confirmed_FIPS_tbl <- US_confirmed_tbl[is.na(US_confirmed_tbl$FIPS),] 
+    NAs_Confirmed_Admin2_tbl <- US_confirmed_tbl[is.na(US_confirmed_tbl$Admin2),] 
+    
+    NAs_Deaths_FIPS_tbl <- US_deaths_tbl[is.na(US_deaths_tbl$FIPS),]
+    NAs_Deaths_Admin2_tbl <- US_deaths_tbl[is.na(US_deaths_tbl$Admin2),]
+    
+    NAs_Combined_FIPS_tbl <- NAs_Confirmed_FIPS_tbl %>%
+        left_join(y = NAs_Deaths_FIPS_tbl, by = "UID")
+    
+    NAs_Combined_Admin2_tbl <- NAs_Confirmed_Admin2_tbl %>%
+        left_join(y = NAs_Deaths_Admin2_tbl, by = "UID")
+    
+    NAs_Combined_FIPS_tbl
+    NAs_Combined_Admin2_tbl
+
+```
+
+# Tidy and Transform
+
+
+```{r tiday and transform, echo = TRUE}
+
+# select columns needed for analysis
+    
+    US_confirmed_stripped_tbl <- US_confirmed_tbl %>%
+        select(-iso2, -iso3, -code3, -FIPS)
+    US_deaths_stripped_tbl <- US_deaths_tbl %>%
+        select(-iso2, -iso3, -code3, -FIPS)
+    
+# pivot longer
+    
+    US_confirmed_longer_tbl <- US_confirmed_stripped_tbl %>%
+        pivot_longer(
+            cols = `1/22/20`: `8/5/22`,
+            names_to = "Date",
+            values_to = "Total Confirmed"
+        )
+    
+    US_confirmed_longer_tbl %>% glimpse()
+    
+    US_deaths_longer_tbl <- US_deaths_stripped_tbl %>%
+        pivot_longer(
+            cols = `1/22/20`: `8/5/22`,
+            names_to = "Date",
+            values_to = "Total Deaths"
+        )
+    
+    US_deaths_longer_tbl %>% glimpse()
+
+# lubridate
+    
+    US_confirmed_longer_tbl$Date <- mdy(US_confirmed_longer_tbl$Date)
+    US_confirmed_longer_tbl %>% glimpse()
+    
+    US_deaths_longer_tbl$Date <- mdy(US_deaths_longer_tbl$Date)
+    US_deaths_longer_tbl %>% glimpse()
+    
+# groupby and summarize 
+    
+    US_confirmed_y_tbl <- US_confirmed_longer_tbl %>%
+        mutate(Year = year(Date)) %>%
+        mutate(Date = as.character(Date)) %>%
+        filter(Date == "2020-12-31" | Date == "2021-12-31" | Date == "2022-08-05") %>% 
+        
+        group_by(UID, Admin2, Province_State, Year) %>% 
+        
+        summarize(Total_Confirmed = sum(`Total Confirmed`)) %>%
+        ungroup()
+    
+    
+    US_deaths_y_tbl <- US_deaths_longer_tbl%>%
+        mutate(Year = year(Date)) %>%
+        mutate(Date = as.character(Date)) %>%
+        filter(Date == "2020-12-31" | Date == "2021-12-31" | Date == "2022-08-05") %>% 
+        
+        group_by(UID, Admin2, Province_State, Population, Year) %>%
+        summarize(`Total Deaths` = sum(`Total Deaths`)) %>%
+        ungroup()
+
+        US_deaths_y_m_tbl <- US_deaths_longer_tbl %>%
+        mutate(Year = year(Date)) %>%
+        mutate(Month = month(Date, label = TRUE)) %>%
+        mutate(Year_Month = ceiling_date(x = Date, unit = "month" ) - 1) %>%
+        filter(Date == Year_Month) %>%
+        
+        
+        group_by(Province_State,Year_Month) %>% 
+        summarize(`Total Deaths` = sum(`Total Deaths`)) %>%
+        ungroup()
+
+# summarize total confirmed and deaths by state and year
+    US_confirmed_y_tbl <- US_confirmed_y_tbl %>%
+        group_by(Province_State, Year) %>%
+        summarize(Total_Confirmed = sum(Total_Confirmed)) %>%
+        ungroup()
+   
+    US_deaths_y_tbl <- US_deaths_y_tbl %>%
+        group_by(Province_State, Year) %>%
+        summarize(`Total Deaths` = sum(`Total Deaths`)) %>%
+        ungroup()
+
+# Calculate cases and deaths per year
+    US_confirmed_y_tbl <- US_confirmed_y_tbl %>%
+        group_by(Province_State) %>%
+        mutate(Total_Confirmed_Lag = lag(Total_Confirmed, n = 1)) %>% 
+        mutate(Total_Confirmed_Lag = case_when(
+            is.na(Total_Confirmed_Lag) ~ 0,
+            TRUE ~ Total_Confirmed_Lag)) %>% 
+        mutate(diff = Total_Confirmed - Total_Confirmed_Lag) %>%
+        ungroup()
+    
+    US_deaths_y_tbl <- US_deaths_y_tbl %>%
+        group_by(Province_State) %>%
+        mutate(Total_Deaths_Lag = lag(`Total Deaths`, n = 1)) %>% 
+        mutate(Total_Deaths_Lag = case_when(
+            is.na(Total_Deaths_Lag) ~ 0,
+            TRUE ~ Total_Deaths_Lag)) %>% 
+        mutate(diff = `Total Deaths` - Total_Deaths_Lag) %>%
+        ungroup()
+    
+ # add unique identifier
+    
+    US_confirmed_y_tbl <- tibble::rowid_to_column(US_confirmed_y_tbl, "ID")
+    
+    US_confirmed_y_tbl %>% glimpse()
+    
+    US_deaths_y_tbl <- tibble::rowid_to_column(US_deaths_y_tbl, "ID")
+    
+    US_deaths_y_tbl %>% glimpse()
+
+    US_combined_y_tbl <- US_confirmed_y_tbl %>%
+        left_join(y = US_deaths_y_tbl, by = "ID")
+
+# remove and rename columns
+    
+    US_combined_y_tbl <- US_combined_y_tbl %>%
+        select(-Province_State.y, -Year.y) %>%
+        rename(Year = Year.x, Cases_Per_Year = diff.x, Deaths_Per_Year = diff.y, Province_State = Province_State.x)
+    
+
+```
+
+# Analysis and Visualization
+
+## What are the total confirmed COVID-19 cases and deaths by state?
+
+The top 6 states with the most COVID-19 cases are:
+1. California
+2. Texas
+3. Florida
+4. New York
+5. Illinois
+6. Pennsylvania
+
+The top 6 states with the most COVID-19 deaths are:
+1. California
+2. Texas
+3. Florida
+4. New York
+5. Pennsylvania
+6. Georgia
+
+Five out six states are on both lists, which suggests that states a with high number of COVID-19 cases also have a high number of deaths. Illinois didn't show up in the top 6 states with the most COVID-19 deaths, which suggests the state's COVID-19 death rate is lower than it's case rate. Unlike Illinois,Georgia is on the top six deaths list, which suggests COVID-19 death rate is higher than it's case rate.
+
+```{r cases and deaths by state, echo = TRUE}
+
+confirmed_by_state <- US_combined_y_tbl %>% 
+        select(Province_State, Cases_Per_Year) %>% 
+        filter(Province_State != "Diamond Princess", Province_State != "Grand Princess") %>%
+        group_by(Province_State) %>%
+        summarize(Total_Cases = sum(Cases_Per_Year)) %>%
+        arrange(desc(Total_Cases)) %>%
+        ungroup()
+    
+    confirmed_by_state
+    
+    deaths_by_state <- US_combined_y_tbl %>%
+        select(Province_State, Deaths_Per_Year) %>%
+        filter(Province_State != "Diamond Princess", Province_State != "Grand Princess") %>% #remove ships
+        group_by(Province_State) %>%
+        summarize(`Total Deaths`= sum(Deaths_Per_Year)) %>%
+        arrange(desc(`Total Deaths`)) %>%
+        ungroup()
+    
+    deaths_by_state
+    
+confirmed_by_state %>% head()
+deaths_by_state %>% head()
+    
+
+
+```
+
+## 2. What does California's COVID-19 deaths look like over time?
+
+Because I live in California, I decided to graph California's COVID-19 deaths over time. COVID-19 deaths are only through July 2022 due to not having an entire month's worth of August COVID-19 data at the time of this analysis.  
+
+By the end of 2020, California had about 25 thousand COVID-19 deaths. However, that number quickly doubled. By the end of the first quarter of 2021, California had surpassed 50 thousand COVID-19 deaths. Deaths slowed down in the summer of 2021 and reached 75 thousand by the end of 2021. As of July 2022, California has had approximately 93 thousand COVID-19 deaths.
+
+```{r CA deaths over time, echo = TRUE}
+
+# Plot California deaths over time
+    
+
+    CA_deaths_plot <- US_deaths_y_m_tbl %>%
+        
+        filter(Province_State == "California") %>%
+        select(Year_Month, `Total Deaths`) %>%
+      
+        ggplot(aes(x = Year_Month, y = `Total Deaths`)) +
+        geom_line(color = "cyan3", size = 1.5) +
+        labs(
+            title = "California COVID-19 Deaths Over Time",
+            subtitle = "Jan 2020 - July 2022",
+            x = "Year",
+        ) +
+        ylim(0, 100000) +
+        theme_tq()
+    
+    CA_deaths_plot
+
+```
+
+## 3. Which states had the smallest and largest percent increase in COVID-19 deaths compared to 2020?
+
+The top 6 states with the largest percent increase in COVID-19 deaths compared to 2020 are:
+1. Northern Mariana Islands
+2. Maine
+3. Oklahoma
+4. Alaska
+5. Kentucky
+6. Oregon
+
+The top 6 states with the smallest percent increase in COVID-19 deaths compared to 2020 are:
+1. Rhode Island
+2. Connecticut
+3. New York
+4. New Jersey
+5. North Dakota
+6. District of Columbia
+
+It's worth noting that the percent changes are relative. Relative changes on small numbers can appear to be more significant than they are. For example, Northern Mariana Islands had 2 COVID-19 deaths reported in 2020 and 38 reported in 2022, resulting in an 1,800 percent increase. However, the absolute number of COVID-19 deaths in Northern Mariana Islands is extremely small.
+
+```{r measuring change, echo = TRUE}
+
+# Calculate percent difference 
+    state_pct_diff_tbl <- US_combined_y_tbl %>%
+        select(Province_State, Year, `Total Deaths`) %>%
+        group_by(Province_State) %>%
+        mutate(year_2020 = first(`Total Deaths`)) %>% 
+        mutate(diff = `Total Deaths` - year_2020) %>% 
+        mutate(pct_diff = diff / year_2020) %>% #View()
+        mutate(pct_diff = case_when(
+            pct_diff == "NaN" ~ 0,
+            pct_diff == "Inf" ~ 1,
+            TRUE ~ pct_diff)) %>%
+        mutate(pct_diff = round(pct_diff, 2)) %>%
+        mutate(pct_diff_chr = scales::percent(pct_diff)) %>% #I need to remove this field
+        ungroup()
+    
+    state_pct_diff_tbl %>% glimpse()
+    
+# Show percent difference in deaths compared to 2020    
+    state_max_pct_increase <- state_pct_diff_tbl %>%
+        filter(Year == "2022") %>%
+        filter(Province_State != "Diamond Princess", Province_State != "Grand Princess") %>%
+        group_by(Province_State) %>%
+        summarize(max_increase = max(pct_diff)) %>%
+        arrange(desc(max_increase)) %>% glimpse() %>%
+        mutate(max_increase = scales::percent(max_increase)) %>%
+        ungroup()
+        
+    state_max_pct_increase 
+   
+    largest_pct_increase <- state_max_pct_increase %>% head()
+    smallest_pct_increase <- state_max_pct_increase %>% tail()
+    
+    largest_pct_increase
+    smallest_pct_increase
+    
+
+```
+
+## 4. What is the COVID-19 deaths impact look like across different geographic areas of the US?
+
+There about four states, California, Texas, New York, Florida in the highest threshold with around 75 thousand deaths or more. While I know there are a lot more people in California and New York, it is still interesting to see the two states in the highest band because I do know they have some of the highest vaccination rates. It would be worth exploring when most of the deaths in California and New York happened. For example, were there were a lot of deaths early on before vaccines were available. 
+
+```{r deaths map, echo = TRUE}
+
+#5.4 Create a map
+    
+    # reorder tibble
+    deaths_by_state <- deaths_by_state %>%
+        arrange(Province_State)
+    
+    # create state codes tbl
+    state_codes_tbl <- readr::read_delim("state_codes.csv", delim = "|") # I created this CSV file
+    
+    state_codes_tbl <- state_codes_tbl %>%
+        rename(Province_State = State)
+    
+     # join tables
+    deaths_by_state <- deaths_by_state %>%
+        left_join(y = state_codes_tbl, by ="Province_State" ) %>%
+        rename(values = `Total Deaths`)
+    
+    deaths_by_state_map_tbl <- deaths_by_state %>%
+        select(-Province_State)
+    
+    density_map_tbl <- map_with_data(data = deaths_by_state_map_tbl, values = "values")
+    density_map_tbl <- density_map_tbl %>%
+        select(state, values)
+    
+    # Plot map
+    plot_usmap(regions = "states", data = density_map_tbl, values = "values") +
+    labs(title = "US COVID-19 Deaths Heat Map",
+        subtitle = "Jaunary 2020 - August 2022") +
+    theme(panel.background = element_blank()) +
+    scale_fill_continuous(low = "yellow", high = "red", name = "Total Deaths")
+
+```
+
+## 5. Is there a relationship between the number of COVID-19 cases and deaths?
+
+It appears that there is a strong relationship between the number of COVID-19 cases and deaths. Additionally, the goodness of fit measures for linear regression model, r squared, has a  value of 0.91.Meaning that the linear regression model explains the observed data well. Lastly, the p-value is significantly small at 2.2e-16, which suggests that the predictor variable, number of COVID-19 cases are associated with the response variable, number of COVID-19 deaths
+
+```{r deaths and cases relationship, echo = TRUE}
+
+ # update combined tbl with cases per thousand and deaths per thousand columns
+    
+    US_combined_y_tbl <-  US_combined_y_tbl %>%
+        mutate(cases_per_thou = Total_Confirmed / 1000) %>%
+        mutate(deaths_per_thou = `Total Deaths` / 1000)
+
+    
+    # estimate linear regression
+    my_mod <- lm(deaths_per_thou ~ cases_per_thou, US_combined_y_tbl)
+    summary(my_mod)
+    
+    # create data for ggplot
+    data_mod_tbl <- tibble(predicted = predict(my_mod),
+                           observed = US_combined_y_tbl$deaths_per_thou)
+    
+    # create plot
+    ggplot(data_mod_tbl,
+           aes(x = predicted, 
+               y = observed)) +
+        geom_point() +
+        geom_abline(intercept = 0,
+                    slope = 1,
+                    color = "red",
+                    size = 2) +
+        labs(
+            x = "Cases per Thousand",
+            y = "Deaths per Thousand"
+        )
+        theme_tq() 
+
+```
+# Conclusion and Bias Identification
+
+It's interesting to see the number of COVID-19 cases and deaths and relationships in the US by state as well as the death trend in California. Additional analysis could be done to look at more granular locational impacts, COVID-19 cases and deaths compared to state populations, and case and deaths rates over time.
+
+A bias that came to mine as I was completing this project was vaccination rates. However, I didn't merge COVID-19 vaccination data to explore this biased thought.
